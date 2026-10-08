@@ -1,0 +1,1937 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>傳奇卡牌工坊｜3D 鐳射全息卡牌展示系統</title>
+
+  <!-- SEO & Social Meta Tags -->
+  <meta name="description" content="個人專屬 3D 鐳射反光卡牌展示網頁，具備陀螺儀動態傾斜、全息箔膜折射、即時編輯與高解析度匯出功能。">
+  <meta property="og:title" content="傳奇卡牌工坊｜3D 鐳射全息卡牌展示系統">
+  <meta property="og:description" content="具備 3D 視差與動態雷射反光（Holographic Foil）效果的個人傳奇卡牌展示。">
+  <meta property="og:type" content="website">
+
+  <!-- Google Fonts: Cinzel & Outfit & Noto Sans TC -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href=### 【第二階段：系統實作與輸出技術規範】 收到使用者的完整回覆後，嚴格遵循以下規格輸出完整單一檔案 `index.html`： 1. **響應式佈局架構（RWD）**： - **桌面端（≥
+    1024px）**：雙欄並排（左側卡牌 3D 舞台，右側磨砂玻璃面板）。 - **平板端（768px - 1023px）**：縮減邊距，卡牌自動等比縮放。 - **行動端（<
+    768px）**：自動切換為垂直堆疊，卡牌居上半部，控制面板收攏在底部，優化單手觸控。 - **黃金比例與流體排版**：固定 TCG 標準比例（`aspect-ratio: 63 / 88`），寬度採用 `width:
+    min(88vw, 380px)`，內文字級採用 `clamp()` / 相對單位防止破版。 2. **3D 視差與動態雷射系統**： - 採用 CSS 3D Transform（`perspective: 1000px`,
+    `transform-style: preserve-3d`）。 - 游標與觸控移動時，卡牌傾角（`rotateX`/`rotateY`）即時連動，移開時平滑回彈。 -
+    支援行動裝置觸控拖拽與陀螺儀（`DeviceOrientationEvent`）感應傾斜。 - 整合多層鐳射光澤：隨動態座標偏移的光斑層（Glare）、彩虹全息折射層（`mix-blend-mode:
+    color-dodge`）與立體顆粒暗紋。 3. **零依賴與完整互動面板**： - 全單一檔案（HTML/CSS/JS 內嵌），免 npm、開箱即可推上 GitHub Pages。 - 卡面文字支援
+    `contenteditable="true" ` 即時編輯。 - 支援 FileReader API 本機上傳肖像圖片即時預覽。 - 包含全息鐳射風格切換器、3D 180 度卡背翻轉按鈕。 - 引入 CDN
+    `html2canvas` 實作一鍵匯出高解析度 PNG 功能。 <!-- html2canvas CDN for PNG Export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+  <style>
+    /* ==========================================================================
+       1. 核心變數與全域重設 (Design Tokens & Global Resets)
+       ========================================================================== */
+    :root {
+      --bg-dark: #07090e;
+      --bg-surface: rgba(18, 22, 34, 0.75);
+      --bg-surface-hover: rgba(28, 34, 52, 0.85);
+      --border-glass: rgba(255, 255, 255, 0.12);
+      --border-accent: rgba(180, 130, 255, 0.4);
+      --text-main: #f0f4fc;
+      --text-muted: #8e9bb5;
+      --text-gold: #ffd700;
+
+      /* 核心卡牌主題色系：星穹紫 × 虛空藍 */
+      --theme-primary: #8b5cf6;
+      --theme-secondary: #06b6d4;
+      --theme-accent: #f43f5e;
+      --theme-gold: #eab308;
+
+      /* 卡牌尺寸與比例 */
+      --card-width: min(88vw, 380px);
+      --card-ratio: 63 / 88;
+      --card-radius: 18px;
+
+      /* 動態互動參數 (由 JS 動態更新) */
+      --pointer-x: 50%;
+      --pointer-y: 50%;
+      --pointer-from-center: 0;
+      --card-rot-x: 0deg;
+      --card-rot-y: 0deg;
+      --foil-opacity: 0.85;
+      --glare-opacity: 0.6;
+
+      /* 字型系統 */
+      --font-title: 'Cinzel', serif;
+      --font-display: 'Outfit', sans-serif;
+      --font-body: 'Noto Sans TC', sans-serif;
+    }
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      background-image:
+        radial-gradient(circle at 50% 15%, rgba(139, 92, 246, 0.18) 0%, transparent 55%),
+        radial-gradient(circle at 85% 80%, rgba(6, 182, 212, 0.12) 0%, transparent 50%),
+        radial-gradient(circle at 10% 70%, rgba(244, 63, 94, 0.1) 0%, transparent 45%),
+        linear-gradient(to bottom, #07090e, #0c1017);
+      background-attachment: fixed;
+      color: var(--text-main);
+      font-family: var(--font-body);
+      min-height: 100vh;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    /* 背景粒子星空網格 */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        radial-gradient(rgba(255, 255, 255, 0.15) 1px, transparent 1px),
+        linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+      background-size: 32px 32px, 64px 64px, 64px 64px;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.65;
+    }
+
+    /* ==========================================================================
+       2. 頁面導航與標頭 (Header & Brand Bar)
+       ========================================================================== */
+    header {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 18px 32px;
+      border-bottom: 1px solid var(--border-glass);
+      backdrop-filter: blur(12px);
+      background: rgba(7, 9, 14, 0.65);
+    }
+
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #ec4899, #8b5cf6, #3b82f6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      box-shadow: 0 0 18px rgba(139, 92, 246, 0.5);
+    }
+
+    .brand-text h1 {
+      font-family: var(--font-title);
+      font-size: 1.15rem;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      background: linear-gradient(90deg, #fff, #c4b5fd, #67e8f9);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-text p {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+    }
+
+    .header-badges {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .badge-tag {
+      font-family: var(--font-display);
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 5px 12px;
+      border-radius: 20px;
+      background: rgba(139, 92, 246, 0.15);
+      border: 1px solid rgba(139, 92, 246, 0.4);
+      color: #c4b5fd;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .badge-tag.pulse::before {
+      content: '';
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+      animation: pulseAnim 2s infinite;
+    }
+
+    @keyframes pulseAnim {
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 0.4;
+        transform: scale(0.8);
+      }
+    }
+
+    /* ==========================================================================
+       3. 主要佈局架構 (Main Layout & RWD)
+       ========================================================================== */
+    main {
+      position: relative;
+      z-index: 1;
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr;
+      padding: 24px;
+      max-width: 1380px;
+      width: 100%;
+      margin: 0 auto;
+      gap: 36px;
+    }
+
+    /* 桌面端 (≥ 1024px)：雙欄佈局 (左卡牌舞台，右控制台) */
+    @media (min-width: 1024px) {
+      main {
+        grid-template-columns: minmax(420px, 1fr) minmax(460px, 540px);
+        align-items: center;
+        gap: 56px;
+        padding: 40px;
+      }
+    }
+
+    /* 平板端 (768px - 1023px) */
+    @media (min-width: 768px) and (max-width: 1023px) {
+      main {
+        padding: 30px;
+        gap: 40px;
+      }
+    }
+
+    /* 行動端 (< 768px) */
+    @media (max-width: 767px) {
+      main {
+        padding: 16px;
+        gap: 28px;
+      }
+
+      header {
+        padding: 14px 18px;
+      }
+
+      .badge-tag.hide-mobile {
+        display: none;
+      }
+    }
+
+    /* ==========================================================================
+       4. 卡牌 3D 展示舞台 (3D Card Stage)
+       ========================================================================== */
+    .stage-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      perspective: 1200px;
+      padding: 20px 0;
+      user-select: none;
+    }
+
+    .stage-glow {
+      position: absolute;
+      width: min(92vw, 420px);
+      height: min(92vw, 420px);
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.35) 0%, rgba(6, 182, 212, 0.15) 45%, transparent 70%);
+      filter: blur(40px);
+      z-index: 0;
+      pointer-events: none;
+      transition: all 0.5s ease;
+    }
+
+    /* 3D 卡牌卡槽 */
+    .card-scene {
+      position: relative;
+      z-index: 2;
+      width: var(--card-width);
+      aspect-ratio: var(--card-ratio);
+      cursor: grab;
+      transform-style: preserve-3d;
+      transition: transform 0.1s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    .card-scene:active {
+      cursor: grabbing;
+    }
+
+    .card-container {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      transform-style: preserve-3d;
+      transform: rotateX(var(--card-rot-x)) rotateY(var(--card-rot-y));
+      transition: transform 0.08s ease-out;
+      border-radius: var(--card-radius);
+      box-shadow:
+        calc(var(--card-rot-y) * -0.8px) calc(var(--card-rot-x) * 0.8px) 35px rgba(0, 0, 0, 0.7),
+        0 15px 40px rgba(139, 92, 246, 0.25);
+    }
+
+    .card-container.is-flipped {
+      transform: rotateX(var(--card-rot-x)) rotateY(calc(var(--card-rot-y) + 180deg)) !important;
+      transition: transform 0.65s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+    }
+
+    .card-container.spring-back {
+      transition: transform 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.6s ease !important;
+    }
+
+    /* 卡牌雙面共用基底 */
+    .card-face {
+      position: absolute;
+      inset: 0;
+      border-radius: var(--card-radius);
+      overflow: hidden;
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+      transform-style: preserve-3d;
+    }
+
+    /* ==========================================================================
+       5. 卡牌正面結構與設計 (Card Front & TCG Artwork)
+       ========================================================================== */
+    .card-front {
+      background: #0d111c;
+      border: 2px solid #ecd390;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: inset 0 0 12px rgba(255, 215, 0, 0.35);
+      z-index: 2;
+    }
+
+    /* 頂級外框裝飾與金箔線 */
+    .card-frame {
+      width: 100%;
+      height: 100%;
+      border-radius: calc(var(--card-radius) - 4px);
+      background: linear-gradient(145deg, #161b2b, #0c0f18 70%, #151a28);
+      border: 1.5px solid rgba(255, 223, 128, 0.6);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+      padding: 10px 12px;
+    }
+
+    /* 角落防偽星符標記 */
+    .card-corner {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .card-corner.top-left {
+      top: 3px;
+      left: 3px;
+      border-top: 2px solid #ffd700;
+      border-left: 2px solid #ffd700;
+    }
+
+    .card-corner.top-right {
+      top: 3px;
+      right: 3px;
+      border-top: 2px solid #ffd700;
+      border-right: 2px solid #ffd700;
+    }
+
+    .card-corner.bottom-left {
+      bottom: 3px;
+      left: 3px;
+      border-bottom: 2px solid #ffd700;
+      border-left: 2px solid #ffd700;
+    }
+
+    .card-corner.bottom-right {
+      bottom: 3px;
+      right: 3px;
+      border-bottom: 2px solid #ffd700;
+      border-right: 2px solid #ffd700;
+    }
+
+    /* 頂部標頭：階級、名稱、HP、屬性 */
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: relative;
+      z-index: 5;
+      padding-bottom: 6px;
+      border-bottom: 1.5px solid rgba(255, 215, 0, 0.35);
+      margin-bottom: 6px;
+      transform: translateZ(18px);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .card-stage-badge {
+      font-family: var(--font-display);
+      font-size: clamp(0.55rem, 1.8vw, 0.65rem);
+      font-weight: 800;
+      color: #111;
+      background: linear-gradient(135deg, #ffd700, #ffb300);
+      padding: 2px 6px;
+      border-radius: 4px;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    }
+
+    .card-name {
+      font-family: var(--font-title);
+      font-size: clamp(0.9rem, 3.2vw, 1.15rem);
+      font-weight: 900;
+      color: #fff;
+      text-shadow: 0 0 10px rgba(139, 92, 246, 0.8), 0 2px 4px #000;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .hp-badge {
+      display: flex;
+      align-items: baseline;
+      gap: 3px;
+    }
+
+    .hp-label {
+      font-family: var(--font-display);
+      font-size: 0.65rem;
+      font-weight: 800;
+      color: #ffd700;
+    }
+
+    .hp-value {
+      font-family: var(--font-display);
+      font-size: clamp(1.1rem, 3.8vw, 1.35rem);
+      font-weight: 900;
+      color: #fff;
+      text-shadow: 0 2px 8px rgba(255, 60, 60, 0.6);
+      line-height: 1;
+    }
+
+    .type-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #c084fc, #7c3aed 70%, #4c1d95);
+      border: 1.5px solid #ffd700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      box-shadow: 0 0 10px rgba(168, 85, 247, 0.8);
+    }
+
+    /* 插畫立繪視窗 (Illustration Window) */
+    .card-art-box {
+      position: relative;
+      width: 100%;
+      height: 44%;
+      min-height: 140px;
+      border-radius: 8px;
+      border: 2px solid #ecd390;
+      overflow: hidden;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6), inset 0 0 20px rgba(0, 0, 0, 0.5);
+      background: #05070d;
+      transform: translateZ(12px);
+      margin-bottom: 6px;
+    }
+
+    .card-art-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center;
+      display: block;
+      transition: transform 0.4s ease;
+    }
+
+    .card-art-box:hover .card-art-img {
+      transform: scale(1.03);
+    }
+
+    /* 插畫視窗邊框浮水印與等級銘條 */
+    .art-footer-ribbon {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(to top, rgba(7, 9, 14, 0.92) 0%, rgba(7, 9, 14, 0.5) 70%, transparent 100%);
+      padding: 4px 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.6rem;
+      color: #cbd5e1;
+      font-family: var(--font-display);
+      pointer-events: none;
+    }
+
+    .art-desc {
+      color: #94a3b8;
+      font-style: italic;
+    }
+
+    /* 特性與技能區 (Skills & Abilities) */
+    .card-moves-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-around;
+      gap: 6px;
+      background: rgba(15, 20, 32, 0.75);
+      border: 1px solid rgba(255, 215, 0, 0.2);
+      border-radius: 8px;
+      padding: 8px 10px;
+      transform: translateZ(20px);
+      backdrop-filter: blur(4px);
+    }
+
+    /* 被動特性 (Passive Ability) */
+    .ability-block {
+      border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
+      padding-bottom: 5px;
+    }
+
+    .ability-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 2px;
+    }
+
+    .ability-badge {
+      font-family: var(--font-display);
+      font-size: 0.58rem;
+      font-weight: 800;
+      color: #fff;
+      background: linear-gradient(135deg, #ef4444, #b91c1c);
+      padding: 1px 5px;
+      border-radius: 3px;
+      letter-spacing: 0.05em;
+    }
+
+    .ability-name {
+      font-family: var(--font-body);
+      font-size: clamp(0.72rem, 2vw, 0.82rem);
+      font-weight: 800;
+      color: #f87171;
+    }
+
+    .ability-desc {
+      font-size: clamp(0.58rem, 1.8vw, 0.66rem);
+      color: #cbd5e1;
+      line-height: 1.35;
+    }
+
+    /* 招式一 (Move 1) */
+    .move-block {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .move-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .move-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .energy-cost {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .cost-pip {
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #fde047, #ca8a04);
+      border: 1px solid #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      color: #332;
+      font-weight: bold;
+    }
+
+    .cost-pip.void {
+      background: radial-gradient(circle at 35% 35%, #a855f7, #6b21a8);
+      color: #fff;
+    }
+
+    .move-name {
+      font-family: var(--font-body);
+      font-size: clamp(0.75rem, 2.2vw, 0.85rem);
+      font-weight: 800;
+      color: #f1f5f9;
+    }
+
+    .move-damage {
+      font-family: var(--font-display);
+      font-size: clamp(0.95rem, 2.8vw, 1.15rem);
+      font-weight: 900;
+      color: #ffd700;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+    }
+
+    .move-desc {
+      font-size: clamp(0.58rem, 1.7vw, 0.65rem);
+      color: #94a3b8;
+      line-height: 1.3;
+      padding-left: 20px;
+    }
+
+    /* 奧義技能 (Ultimate Move) */
+    .move-block.ultimate {
+      background: rgba(139, 92, 246, 0.12);
+      border: 1px solid rgba(139, 92, 246, 0.35);
+      border-radius: 6px;
+      padding: 4px 6px;
+    }
+
+    .move-block.ultimate .move-name {
+      color: #e9d5ff;
+      text-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
+    }
+
+    .move-block.ultimate .move-damage {
+      color: #f43f5e;
+      text-shadow: 0 0 10px rgba(244, 63, 94, 0.7);
+    }
+
+    /* 底部對抗與調度數值 (Stats Bar: Weakness, Resistance, Retreat) */
+    .card-stats-bar {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      text-align: center;
+      background: rgba(7, 9, 14, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      padding: 3px 6px;
+      margin-top: 6px;
+      font-size: clamp(0.55rem, 1.6vw, 0.62rem);
+      color: #94a3b8;
+      transform: translateZ(16px);
+    }
+
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+    }
+
+    .stat-val {
+      font-weight: 700;
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    /* 版權與防偽印記 (Card Footer) */
+    .card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 4px;
+      margin-top: 4px;
+      font-size: clamp(0.48rem, 1.4vw, 0.55rem);
+      color: #64748b;
+      font-family: var(--font-display);
+      transform: translateZ(12px);
+    }
+
+    .footer-left {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .holo-security-seal {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: conic-gradient(from 0deg, #ffd700, #ff007f, #00f0ff, #00ff66, #ffd700);
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      box-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8px;
+      color: #111;
+      font-weight: 900;
+      animation: rotateSeal 10s linear infinite;
+    }
+
+    @keyframes rotateSeal {
+      from {
+        transform: rotate(0deg);
+      }
+
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* ==========================================================================
+       6. 多層動態鐳射反光系統 (Holographic Foil & Glare Engine)
+       ========================================================================== */
+    /* 光斑層 (Specular Glare) */
+    .foil-glare {
+      position: absolute;
+      inset: 0;
+      border-radius: var(--card-radius);
+      pointer-events: none;
+      z-index: 25;
+      background: radial-gradient(circle 280px at var(--pointer-x) var(--pointer-y),
+          rgba(255, 255, 255, 0.85) 0%,
+          rgba(255, 255, 255, 0.3) 25%,
+          rgba(255, 255, 255, 0.05) 50%,
+          transparent 75%);
+      mix-blend-mode: overlay;
+      opacity: var(--glare-opacity);
+      transition: opacity 0.3s ease;
+      transform: translateZ(28px);
+    }
+
+    /* 鐳射全息彩膜基底層 (Holographic Foil Layer) */
+    .foil-layer {
+      position: absolute;
+      inset: 0;
+      border-radius: var(--card-radius);
+      pointer-events: none;
+      z-index: 20;
+      opacity: var(--foil-opacity);
+      mix-blend-mode: color-dodge;
+      transition: opacity 0.3s ease, filter 0.3s ease;
+      transform: translateZ(25px);
+    }
+
+    /* 風格 1: Cosmos Holo 宇宙彩虹 (預設) */
+    .foil-style-cosmos {
+      background-image:
+        radial-gradient(circle at var(--pointer-x) var(--pointer-y), rgba(255, 255, 255, 0.4) 0%, transparent 40%),
+        repeating-linear-gradient(calc(var(--card-rot-y) * 2 + 125deg),
+          rgba(255, 0, 128, 0.5) 0%,
+          rgba(255, 128, 0, 0.5) 12%,
+          rgba(255, 255, 0, 0.5) 24%,
+          rgba(0, 255, 128, 0.5) 36%,
+          rgba(0, 255, 255, 0.5) 48%,
+          rgba(0, 128, 255, 0.5) 60%,
+          rgba(128, 0, 255, 0.5) 72%,
+          rgba(255, 0, 128, 0.5) 84%),
+        radial-gradient(circle 2px at 20% 30%, #fff 100%, transparent),
+        radial-gradient(circle 2px at 70% 60%, #fff 100%, transparent),
+        radial-gradient(circle 2px at 40% 80%, #fff 100%, transparent),
+        radial-gradient(circle 2px at 85% 25%, #fff 100%, transparent);
+      background-size: 100% 100%, 250% 250%, 60px 60px, 90px 90px, 75px 75px, 110px 110px;
+      background-position: center, calc(var(--pointer-x) * 0.8) calc(var(--pointer-y) * 0.8), 0 0, 0 0, 0 0, 0 0;
+      filter: brightness(1.2) contrast(1.3) saturate(1.4);
+    }
+
+    /* 風格 2: Rainbow Secret 極光全息 */
+    .foil-style-rainbow {
+      background-image:
+        repeating-linear-gradient(calc(var(--card-rot-x) * 3 + 45deg),
+          rgba(255, 0, 0, 0.55) 0px,
+          rgba(255, 215, 0, 0.55) 18px,
+          rgba(0, 255, 128, 0.55) 36px,
+          rgba(0, 200, 255, 0.55) 54px,
+          rgba(147, 51, 234, 0.55) 72px,
+          rgba(255, 0, 128, 0.55) 90px,
+          rgba(255, 0, 0, 0.55) 108px),
+        repeating-linear-gradient(-45deg,
+          rgba(255, 255, 255, 0.15) 0px,
+          rgba(255, 255, 255, 0.15) 2px,
+          transparent 2px,
+          transparent 6px);
+      background-size: 200% 200%, 100% 100%;
+      background-position: calc(var(--pointer-x) * 1.2) calc(var(--pointer-y) * 1.2), 0 0;
+      filter: brightness(1.25) contrast(1.4) saturate(1.6);
+    }
+
+    /* 風格 3: Gold Ultra 黑金浮雕 */
+    .foil-style-gold {
+      background-image:
+        linear-gradient(calc(var(--card-rot-y) * 2 + 135deg),
+          rgba(255, 215, 0, 0.75) 0%,
+          rgba(180, 130, 20, 0.85) 25%,
+          rgba(255, 250, 210, 0.95) 50%,
+          rgba(218, 165, 32, 0.85) 75%,
+          rgba(255, 215, 0, 0.75) 100%),
+        radial-gradient(circle at var(--pointer-x) var(--pointer-y), rgba(255, 255, 255, 0.6) 0%, transparent 60%);
+      background-size: 180% 180%, 100% 100%;
+      background-position: calc(var(--pointer-x) * 0.9) calc(var(--pointer-y) * 0.9), center;
+      mix-blend-mode: hard-light;
+      filter: brightness(1.15) contrast(1.5) saturate(1.8);
+    }
+
+    /* 風格 4: Silver Phantom 冷冽銀鏡 */
+    .foil-style-silver {
+      background-image:
+        linear-gradient(calc(var(--card-rot-x) * 2 + 115deg),
+          rgba(255, 255, 255, 0) 10%,
+          rgba(200, 230, 255, 0.65) 30%,
+          rgba(255, 255, 255, 0.95) 50%,
+          rgba(175, 195, 230, 0.65) 70%,
+          rgba(255, 255, 255, 0) 90%),
+        repeating-linear-gradient(90deg,
+          rgba(255, 255, 255, 0.1) 0px,
+          rgba(255, 255, 255, 0.1) 3px,
+          transparent 3px,
+          transparent 8px);
+      background-size: 220% 220%, 100% 100%;
+      background-position: calc(var(--pointer-x) * 1.5) calc(var(--pointer-y) * 1.5), 0 0;
+      mix-blend-mode: screen;
+      filter: brightness(1.3) contrast(1.2);
+    }
+
+    /* 立體金屬顆粒微紋理層 (Sparkle Micro-Texture) */
+    .foil-sparkles {
+      position: absolute;
+      inset: 0;
+      border-radius: var(--card-radius);
+      pointer-events: none;
+      z-index: 22;
+      opacity: 0.35;
+      mix-blend-mode: color-dodge;
+      background-image: radial-gradient(1px 1px at calc(var(--pointer-x) * 0.5) calc(var(--pointer-y) * 0.5), #fff, transparent);
+      background-size: 24px 24px;
+      transform: translateZ(26px);
+    }
+
+    /* ==========================================================================
+       7. 卡背 3D 設計 (Card Back Face - 180° Flip)
+       ========================================================================== */
+    .card-back {
+      background: #090c14;
+      border: 2px solid #ecd390;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transform: rotateY(180deg) translateZ(1px);
+      box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.8);
+      z-index: 1;
+    }
+
+    .back-frame {
+      width: 100%;
+      height: 100%;
+      border-radius: calc(var(--card-radius) - 4px);
+      background: radial-gradient(circle at 50% 50%, #171f33 0%, #0b0f1a 75%, #06080e 100%);
+      border: 2px solid #ffd700;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 14px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* 卡背幾何法陣裝飾 */
+    .back-runes-circle {
+      position: absolute;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      border: 2px dashed rgba(255, 215, 0, 0.4);
+      animation: rotateSeal 40s linear infinite reverse;
+      pointer-events: none;
+    }
+
+    .back-runes-outer {
+      position: absolute;
+      width: 260px;
+      height: 260px;
+      border-radius: 50%;
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      pointer-events: none;
+    }
+
+    .back-title-top {
+      font-family: var(--font-title);
+      font-size: 1.15rem;
+      font-weight: 900;
+      letter-spacing: 0.18em;
+      color: #ffd700;
+      text-shadow: 0 0 10px rgba(255, 215, 0, 0.6);
+      z-index: 2;
+    }
+
+    .back-center-crest {
+      width: 110px;
+      height: 110px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #ec4899, #8b5cf6 60%, #3b82f6);
+      border: 3px solid #ffd700;
+      box-shadow: 0 0 30px rgba(139, 92, 246, 0.8), inset 0 0 15px rgba(255, 255, 255, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+      z-index: 2;
+      position: relative;
+    }
+
+    .back-title-bottom {
+      font-family: var(--font-display);
+      font-size: 0.8rem;
+      font-weight: 800;
+      letter-spacing: 0.22em;
+      color: #c4b5fd;
+      text-shadow: 0 0 8px rgba(196, 181, 253, 0.6);
+      z-index: 2;
+    }
+
+    /* ==========================================================================
+       8. 右側磨砂玻璃控制面板 (Frosted Glass Control Panel)
+       ========================================================================== */
+    .control-panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-glass);
+      border-radius: 20px;
+      padding: 28px;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      position: relative;
+      z-index: 5;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-glass);
+      padding-bottom: 14px;
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .panel-title h2 {
+      font-family: var(--font-title);
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: 0.05em;
+    }
+
+    .panel-title span {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    /* 控制分組通用樣式 */
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .group-label {
+      font-family: var(--font-display);
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #cbd5e1;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 鐳射風格切換器網格 (Foil Switcher) */
+    .foil-selector-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .foil-btn {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-glass);
+      border-radius: 12px;
+      padding: 12px 14px;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      font-family: var(--font-body);
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: all 0.25s ease;
+      text-align: left;
+    }
+
+    .foil-btn:hover {
+      background: rgba(255, 255, 255, 0.09);
+      border-color: rgba(255, 255, 255, 0.3);
+      transform: translateY(-2px);
+    }
+
+    .foil-btn.active {
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(6, 182, 212, 0.2));
+      border-color: #8b5cf6;
+      box-shadow: 0 0 15px rgba(139, 92, 246, 0.4);
+      color: #fff;
+    }
+
+    .foil-preview-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      border: 1px solid rgba(255, 255, 255, 0.4);
+    }
+
+    .dot-cosmos {
+      background: linear-gradient(135deg, #ec4899, #8b5cf6, #06b6d4);
+    }
+
+    .dot-rainbow {
+      background: linear-gradient(135deg, #f43f5e, #fbbf24, #10b981, #3b82f6);
+    }
+
+    .dot-gold {
+      background: linear-gradient(135deg, #ffd700, #b8860b, #fff8dc);
+    }
+
+    .dot-silver {
+      background: linear-gradient(135deg, #e2e8f0, #94a3b8, #f8fafc);
+    }
+
+    /* 動作按鈕群組 (Action Buttons) */
+    .action-btn-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .action-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-glass);
+      border-radius: 12px;
+      padding: 12px 16px;
+      color: #fff;
+      font-family: var(--font-display);
+      font-size: 0.85rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+    }
+
+    .action-btn:hover {
+      background: var(--bg-surface-hover);
+      border-color: rgba(255, 255, 255, 0.25);
+      transform: translateY(-2px);
+    }
+
+    .action-btn:active {
+      transform: translateY(0);
+    }
+
+    .action-btn.primary {
+      background: linear-gradient(135deg, #7c3aed, #4f46e5);
+      border: 1px solid rgba(167, 139, 250, 0.5);
+      box-shadow: 0 4px 15px rgba(124, 58, 237, 0.4);
+    }
+
+    .action-btn.primary:hover {
+      background: linear-gradient(135deg, #8b5cf6, #6366f1);
+      box-shadow: 0 6px 20px rgba(124, 58, 237, 0.6);
+    }
+
+    .action-btn.export {
+      background: linear-gradient(135deg, #059669, #0d9488);
+      border: 1px solid rgba(52, 211, 153, 0.4);
+      box-shadow: 0 4px 15px rgba(5, 150, 105, 0.35);
+      grid-column: span 2;
+    }
+
+    .action-btn.export:hover {
+      background: linear-gradient(135deg, #10b981, #14b8a6);
+      box-shadow: 0 6px 22px rgba(16, 185, 129, 0.55);
+    }
+
+    /* 圖像上傳與自訂控制 */
+    .file-input-wrapper {
+      position: relative;
+      overflow: hidden;
+      display: inline-block;
+      width: 100%;
+    }
+
+    .file-input-wrapper input[type="file"] {
+      position: absolute;
+      left: 0;
+      top: 0;
+      opacity: 0;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+    }
+
+    /* 滑桿與調節器 (Sliders) */
+    .sliders-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .slider-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .custom-range {
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.1);
+      outline: none;
+      -webkit-appearance: none;
+      cursor: pointer;
+    }
+
+    .custom-range::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #8b5cf6;
+      border: 2px solid #fff;
+      box-shadow: 0 0 8px rgba(139, 92, 246, 0.8);
+      cursor: pointer;
+      transition: transform 0.1s ease;
+    }
+
+    .custom-range::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    /* 即時編輯提示標籤 */
+    .edit-hint-box {
+      background: rgba(139, 92, 246, 0.1);
+      border: 1px dashed rgba(139, 92, 246, 0.35);
+      border-radius: 10px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.78rem;
+      color: #c4b5fd;
+    }
+
+    /* 支援 contenteditable 之編輯提示外框 */
+    [contenteditable="true"] {
+      outline: none;
+      transition: background 0.2s ease, box-shadow 0.2s ease;
+      border-radius: 3px;
+      padding: 0 2px;
+    }
+
+    [contenteditable="true"]:hover {
+      background: rgba(255, 255, 255, 0.08);
+      cursor: text;
+    }
+
+    [contenteditable="true"]:focus {
+      background: rgba(139, 92, 246, 0.25);
+      box-shadow: 0 0 0 1.5px #8b5cf6;
+    }
+
+    /* ==========================================================================
+       9. 頁尾 (Footer)
+       ========================================================================== */
+    footer {
+      position: relative;
+      z-index: 5;
+      text-align: center;
+      padding: 20px;
+      border-top: 1px solid var(--border-glass);
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      background: rgba(7, 9, 14, 0.7);
+    }
+
+    /* 匯出載入中提示遮罩 (Toast & Export Modal) */
+    .toast {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(139, 92, 246, 0.5);
+      color: #fff;
+      padding: 12px 24px;
+      border-radius: 30px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      z-index: 999;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- 標頭導航列 -->
+  <header>
+    <div class="brand-wrap">
+      <div class="brand-icon">✦</div>
+      <div class="brand-text">
+        <h1>LEGENDARY TCG STUDIO</h1>
+        <p>個人專屬 3D 鐳射反光卡牌系統・GitHub Pages 零依賴部署版</p>
+      </div>
+    </div>
+    <div class="header-badges">
+      <span class="badge-tag pulse">即時 3D 渲染運作中</span>
+      <span class="badge-tag hide-mobile">SAR 稀有度全息箔膜</span>
+    </div>
+  </header>
+
+  <!-- 主要互動舞台 -->
+  <main>
+    <!-- 左側：卡牌 3D 視差與反光展示區 -->
+    <div class="stage-wrapper" id="stageWrapper">
+      <div class="stage-glow" id="stageGlow"></div>
+
+      <div class="card-scene" id="cardScene">
+        <div class="card-container" id="cardContainer">
+
+          <!-- 卡牌正面 (Card Front) -->
+          <div class="card-face card-front" id="cardFront">
+            <div class="card-frame">
+              <!-- 四角防偽金符標記 -->
+              <div class="card-corner top-left"></div>
+              <div class="card-corner top-right"></div>
+              <div class="card-corner bottom-left"></div>
+              <div class="card-corner bottom-right"></div>
+
+              <!-- 卡牌頂部標頭 -->
+              <div class="card-header">
+                <div class="header-left">
+                  <span class="card-stage-badge" contenteditable="true" id="badgeStage">ORIGIN LEGEND ★★★</span>
+                  <span class="card-name" contenteditable="true" id="cardName">虛空星神・艾瑟利恩</span>
+                </div>
+                <div class="header-right">
+                  <div class="hp-badge">
+                    <span class="hp-label">HP</span>
+                    <span class="hp-value" contenteditable="true" id="hpValue">340</span>
+                  </div>
+                  <div class="type-icon" title="虛空星穹屬性">✦</div>
+                </div>
+              </div>
+
+              <!-- 插畫立繪視窗 -->
+              <div class="card-art-box" id="cardArtBox">
+                <!-- 預設插畫：引用同目錄 card_art.jpg，若無則降級為 SVG 漸層星神圖騰 -->
+                <img src="./card_art.jpg" alt="虛空星神插畫立繪" class="card-art-img" id="cardArtImg"
+                  onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'400\' height=\'300\' viewBox=\'0 0 400 300\'><defs><radialGradient id=\'g\' cx=\'50%\' cy=\'40%\' r=\'60%\'><stop offset=\'0%\' stop-color=\'%23ec4899\'/><stop offset=\'50%\' stop-color=\'%238b5cf6\'/><stop offset=\'100%\' stop-color=\'%23050814\'/></radialGradient></defs><rect width=\'400\' height=\'300\' fill=\'url(%23g)\'/><circle cx=\'200\' cy=\'130\' r=\'65\' fill=\'none\' stroke=\'%23ffd700\' stroke-width=\'3\' stroke-dasharray=\'8,6\'/><polygon points=\'200,80 235,165 145,115 255,115 165,165\' fill=\'none\' stroke=\'%2300f0ff\' stroke-width=\'2\'/><text x=\'200\' y=\'240\' fill=\'%23fff\' font-size=\'18\' font-family=\'sans-serif\' font-weight=\'bold\' text-anchor=\'middle\'>AETHERION STAR-LORD</text></svg>';">
+                <div class="art-footer-ribbon">
+                  <span class="art-desc" contenteditable="true">NO. 001 虛空帝皇寶可夢 身長: 42.5m 體重: 888.0t</span>
+                  <span contenteditable="true">SAR</span>
+                </div>
+              </div>
+
+              <!-- 核心技能與招式區 -->
+              <div class="card-moves-section">
+                <!-- 被動特性 -->
+                <div class="ability-block">
+                  <div class="ability-header">
+                    <span class="ability-badge">特性</span>
+                    <span class="ability-name" contenteditable="true">星界共鳴・Astral Resonance</span>
+                  </div>
+                  <div class="ability-desc" contenteditable="true">
+                    每回合可從牌組抽取一張能量卡；此寶可夢受到的所有招式傷害降低 30 點。
+                  </div>
+                </div>
+
+                <!-- 招式一 -->
+                <div class="move-block">
+                  <div class="move-header">
+                    <div class="move-left">
+                      <div class="energy-cost">
+                        <div class="cost-pip">⚡</div>
+                        <div class="cost-pip void">✦</div>
+                      </div>
+                      <span class="move-name" contenteditable="true">量子裂變・Quantum Fission</span>
+                    </div>
+                    <span class="move-damage" contenteditable="true">160</span>
+                  </div>
+                  <div class="move-desc" contenteditable="true">
+                    將場上所有能量轉化為脈衝，使對手出戰寶可夢陷入虛空禁錮狀態。
+                  </div>
+                </div>
+
+                <!-- 奧義技能 -->
+                <div class="move-block ultimate">
+                  <div class="move-header">
+                    <div class="move-left">
+                      <div class="energy-cost">
+                        <div class="cost-pip">⚡</div>
+                        <div class="cost-pip void">✦</div>
+                        <div class="cost-pip void">✦</div>
+                      </div>
+                      <span class="move-name" contenteditable="true">終焉星核・Supernova Singularity</span>
+                    </div>
+                    <span class="move-damage" contenteditable="true">340</span>
+                  </div>
+                  <div class="move-desc" contenteditable="true">
+                    引爆重力核心對敵方造成毀滅衝擊，本回合自身免疫所有特殊狀態與反噬。
+                  </div>
+                </div>
+              </div>
+
+              <!-- 對抗與調度機制 -->
+              <div class="card-stats-bar">
+                <div class="stat-item">
+                  <span>弱點</span>
+                  <span class="stat-val" contenteditable="true">🌑 ×2</span>
+                </div>
+                <div class="stat-item">
+                  <span>抗性</span>
+                  <span class="stat-val" contenteditable="true">🛡️ -30</span>
+                </div>
+                <div class="stat-item">
+                  <span>撤退</span>
+                  <span class="stat-val" contenteditable="true">✦✦</span>
+                </div>
+              </div>
+
+              <!-- 專屬防偽印記與版權署名 -->
+              <div class="card-footer">
+                <div class="footer-left">
+                  <span contenteditable="true">Illus. Antigravity Studio / Master Art</span>
+                  <span contenteditable="true">No. 001/001 ★★★ SAR | © 2026 Cosmic TCG.</span>
+                </div>
+                <div class="holo-security-seal" title="TCG 傳奇防偽全息鋼印">✦</div>
+              </div>
+            </div>
+
+            <!-- 動態全息折射層、光斑層與顆粒暗紋 -->
+            <div class="foil-layer foil-style-cosmos" id="foilLayer"></div>
+            <div class="foil-sparkles"></div>
+            <div class="foil-glare" id="foilGlare"></div>
+          </div>
+
+          <!-- 卡牌背面 (Card Back - 180° Flip) -->
+          <div class="card-face card-back" id="cardBack">
+            <div class="back-frame">
+              <div class="back-runes-outer"></div>
+              <div class="back-runes-circle"></div>
+
+              <div class="back-title-top">LEGENDARY TCG</div>
+
+              <div class="back-center-crest">
+                <span>✦</span>
+              </div>
+
+              <div class="back-title-bottom">AUTHENTIC CERTIFIED</div>
+            </div>
+            <!-- 卡背同樣具備光斑反光 -->
+            <div class="foil-glare"></div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- 右側：磨砂玻璃互動控制面板 -->
+    <div class="control-panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <h2>卡牌鍛造控制台</h2>
+          <span>FORGE DECK CONTROL</span>
+        </div>
+        <button class="action-btn" id="btnFlip" title="翻轉 180 度檢視卡背" style="padding: 6px 12px;">
+          🔄 翻轉卡背
+        </button>
+      </div>
+
+      <!-- 鐳射全息箔膜風格切換 -->
+      <div class="control-group">
+        <label class="group-label">
+          <span>✨ 鐳射全息箔膜風格 (Foil Finishes)</span>
+        </label>
+        <div class="foil-selector-grid">
+          <button class="foil-btn active" data-style="cosmos">
+            <span class="foil-preview-dot dot-cosmos"></span>
+            <span>Cosmos Holo 宇宙彩虹</span>
+          </button>
+          <button class="foil-btn" data-style="rainbow">
+            <span class="foil-preview-dot dot-rainbow"></span>
+            <span>Rainbow Secret 極光全息</span>
+          </button>
+          <button class="foil-btn" data-style="gold">
+            <span class="foil-preview-dot dot-gold"></span>
+            <span>Gold Ultra 黑金浮雕</span>
+          </button>
+          <button class="foil-btn" data-style="silver">
+            <span class="foil-preview-dot dot-silver"></span>
+            <span>Silver Phantom 冷冽銀鏡</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 互動視角動作與陀螺儀 -->
+      <div class="control-group">
+        <label class="group-label">
+          <span>🎮 3D 視差與展示模式 (Display Modes)</span>
+        </label>
+        <div class="action-btn-row">
+          <button class="action-btn" id="btnAutoInspect">
+            🌀 自動懸浮巡弋
+          </button>
+          <button class="action-btn" id="btnGyro">
+            📱 陀螺儀感應
+          </button>
+          <button class="action-btn export" id="btnExport">
+            📸 匯出高解析度卡牌 PNG
+          </button>
+        </div>
+      </div>
+
+      <!-- 自訂立繪上傳 -->
+      <div class="control-group">
+        <label class="group-label">
+          <span>🖼️ 更換專屬肖像立繪 (Custom Artwork)</span>
+        </label>
+        <div class="action-btn-row">
+          <div class="file-input-wrapper">
+            <button class="action-btn primary" style="width: 100%;">
+              📂 上傳本地圖片 (JPG/PNG)
+            </button>
+            <input type="file" id="fileUpload" accept="image/*">
+          </div>
+          <button class="action-btn" id="btnResetArt">
+            ↺ 還原預設星神立繪
+          </button>
+        </div>
+      </div>
+
+      <!-- 鐳射反光與靈敏度微調 -->
+      <div class="control-group">
+        <label class="group-label">
+          <span>⚙️ 物理視差與光斑調節 (Physics Tuning)</span>
+        </label>
+        <div class="sliders-grid">
+          <div class="slider-item">
+            <div class="slider-header">
+              <span>鐳射箔膜強度</span>
+              <span id="labelFoilOpacity">85%</span>
+            </div>
+            <input type="range" class="custom-range" id="rangeFoil" min="10" max="100" value="85">
+          </div>
+          <div class="slider-item">
+            <div class="slider-header">
+              <span>3D 傾角靈敏度</span>
+              <span id="labelSensitivity">22°</span>
+            </div>
+            <input type="range" class="custom-range" id="rangeSensitivity" min="8" max="38" value="22">
+          </div>
+        </div>
+      </div>
+
+      <!-- 即時編輯提示 -->
+      <div class="edit-hint-box">
+        <span>✏️</span>
+        <div>
+          <strong>即時編輯模式已啟用：</strong>
+          點擊卡面上任何名稱、HP、招式或版權文字，即可直接在卡面上進行鍵盤編輯與修改！
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- 頁尾 -->
+  <footer>
+    <p>傳奇 3D 鐳射全息卡牌展示系統｜支援 GitHub Pages 靜態零建置部署｜Crafted with Pure HTML5, CSS3 3D Engine & Vanilla JS</p>
+  </footer>
+
+  <!-- 提示浮動框 (Toast) -->
+  <div class="toast" id="toast">
+    <span id="toastIcon">✨</span>
+    <span id="toastMsg">已切換箔膜風格</span>
+  </div>
+
+  <!-- ==========================================================================
+       10. 原生 Vanilla JavaScript 核心物理與互動邏輯
+       ========================================================================== -->
+  <script>
+    (function () {
+      'use strict';
+
+      // DOM 元素引用
+      const cardScene = document.getElementById('cardScene');
+      const cardContainer = document.getElementById('cardContainer');
+      const cardFront = document.getElementById('cardFront');
+      const foilLayer = document.getElementById('foilLayer');
+      const foilGlare = document.getElementById('foilGlare');
+      const stageGlow = document.getElementById('stageGlow');
+      const btnFlip = document.getElementById('btnFlip');
+      const btnAutoInspect = document.getElementById('btnAutoInspect');
+      const btnGyro = document.getElementById('btnGyro');
+      const btnExport = document.getElementById('btnExport');
+      const fileUpload = document.getElementById('fileUpload');
+      const btnResetArt = document.getElementById('btnResetArt');
+      const cardArtImg = document.getElementById('cardArtImg');
+      const rangeFoil = document.getElementById('rangeFoil');
+      const labelFoilOpacity = document.getElementById('labelFoilOpacity');
+      const rangeSensitivity = document.getElementById('rangeSensitivity');
+      const labelSensitivity = document.getElementById('labelSensitivity');
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toastMsg');
+      const toastIcon = document.getElementById('toastIcon');
+
+      // 物理與互動狀態
+      let maxTilt = 22; // 最大傾斜角 (度)
+      let targetRotX = 0;
+      let targetRotY = 0;
+      let currentRotX = 0;
+      let currentRotY = 0;
+      let pointerX = 50; // 百分比
+      let pointerY = 50;
+      let targetPointerX = 50;
+      let targetPointerY = 50;
+
+      let isInteracting = false;
+      let isAutoInspecting = false;
+      let autoInspectAngle = 0;
+      let isFlipped = false;
+      let isGyroActive = false;
+      let animFrameId = null;
+
+      // 預設立繪快取
+      const defaultImgSrc = './card_art.jpg';
+
+      // 訊息提示器 (Toast)
+      function showToast(msg, icon = '✨') {
+        toastMsg.textContent = msg;
+        toastIcon.textContent = icon;
+        toast.classList.add('show');
+        clearTimeout(showToast.timer);
+        showToast.timer = setTimeout(() => {
+          toast.classList.remove('show');
+        }, 2600);
+      }
+
+      /* --------------------------------------------------------------------------
+         A. 3D 視差與物理差值平滑循環 (Smooth LERP Animation Loop)
+         -------------------------------------------------------------------------- */
+      function updatePhysics() {
+        if (isAutoInspecting) {
+          autoInspectAngle += 0.025;
+          targetRotX = Math.sin(autoInspectAngle) * (maxTilt * 0.7);
+          targetRotY = Math.cos(autoInspectAngle * 0.8) * (maxTilt * 0.8);
+          targetPointerX = 50 + Math.cos(autoInspectAngle * 0.8) * 35;
+          targetPointerY = 50 + Math.sin(autoInspectAngle) * 35;
+        }
+
+        // LERP 平滑差值計算 (60fps / 120fps 滑順跟隨)
+        const ease = isInteracting ? 0.15 : 0.08;
+        currentRotX += (targetRotX - currentRotX) * ease;
+        currentRotY += (targetRotY - currentRotY) * ease;
+        pointerX += (targetPointerX - pointerX) * ease;
+        pointerY += (targetPointerY - pointerY) * ease;
+
+        // 計算中心距離偏移量
+        const distFromCenter = Math.min(1, Math.hypot((pointerX - 50) / 50, (pointerY - 50) / 50));
+
+        // 更新 CSS 變數
+        document.documentElement.style.setProperty('--card-rot-x', `${currentRotX.toFixed(2)}deg`);
+        document.documentElement.style.setProperty('--card-rot-y', `${currentRotY.toFixed(2)}deg`);
+        document.documentElement.style.setProperty('--pointer-x', `${pointerX.toFixed(1)}%`);
+        document.documentElement.style.setProperty('--pointer-y', `${pointerY.toFixed(1)}%`);
+        document.documentElement.style.setProperty('--pointer-from-center', distFromCenter.toFixed(2));
+
+        // 連動舞台外發光光暈
+        if (stageGlow) {
+          const glowX = (currentRotY * 1.5).toFixed(1);
+          const glowY = (currentRotX * -1.5).toFixed(1);
+          stageGlow.style.transform = `translate(${glowX}px, ${glowY}px)`;
+        }
+
+        animFrameId = requestAnimationFrame(updatePhysics);
+      }
+
+      // 啟動主渲染幀
+      animFrameId = requestAnimationFrame(updatePhysics);
+
+      /* --------------------------------------------------------------------------
+         B. 滑鼠與觸控事件 (Mouse & Touch Events Handling)
+         -------------------------------------------------------------------------- */
+      function handlePointerMove(clientX, clientY) {
+        const rect = cardScene.getBoundingClientRect();
+
+        // 計算游標相對於卡牌中心的正規化座標 (-1 ~ 1)
+        const x = (clientX - rect.left) / rect.width;
+        const y = (clientY - rect.top) / rect.height;
+
+        const clampedX = Math.max(0, Math.min(1, x));
+        const clampedY = Math.max(0, Math.min(1, y));
+
+        targetPointerX = clampedX * 100;
+        targetPointerY = clampedY * 100;
+
+        const normX = (clampedX - 0.5) * 2;
+        const normY = (clampedY - 0.5) * 2;
+
+        // X軸旋轉由 Y 位移決定（向下移則卡牌頂部向前），Y軸旋轉由 X 位移決定
+        targetRotX = -normY * maxTilt;
+        targetRotY = normX * maxTilt;
+      }
+
+      // 滑鼠移動
+      window.addEventListener('mousemove', (e) => {
+        if (isAutoInspecting) return;
+        const rect = cardScene.getBoundingClientRect();
+        // 擴大感應半徑，當滑鼠接近舞台時就產生優雅吸引力
+        const pad = 120;
+        if (
+          e.clientX >= rect.left - pad &&
+          e.clientX <= rect.right + pad &&
+          e.clientY >= rect.top - pad &&
+          e.clientY <= rect.bottom + pad
+        ) {
+          isInteracting = true;
+          handlePointerMove(e.clientX, e.clientY);
+        } else if (isInteracting) {
+          // 移出感應區：平滑回正
+          isInteracting = false;
+          targetRotX = 0;
+          targetRotY = 0;
+          targetPointerX = 50;
+          targetPointerY = 50;
+        }
+      });
+
+      // 觸控拖拽 (行動裝置優化)
+      cardScene.addEventListener('touchstart', (e) => {
+        if (isAutoInspecting) isAutoInspecting = false;
+        isInteracting = true;
+        if (e.touches.length > 0) {
+          handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
+        }
+      }, { passive: true });
+
+      cardScene.addEventListener('touchmove', (e) => {
+        if (e.touches.length > 0) {
+          handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
+        }
+      }, { passive: true });
+
+      cardScene.addEventListener('touchend', () => {
+        isInteracting = false;
+        targetRotX = 0;
+        targetRotY = 0;
+        targetPointerX = 50;
+        targetPointerY = 50;
+      });
+
+      /* --------------------------------------------------------------------------
+         C. 卡牌 180 度翻轉功能 (3D Card Back Flip)
+         -------------------------------------------------------------------------- */
+      btnFlip.addEventListener('click', () => {
+        isFlipped = !isFlipped;
+        if (isFlipped) {
+          cardContainer.classList.add('is-flipped');
+          btnFlip.innerHTML = '🔄 翻回正面';
+          showToast('已翻轉至傳奇認證卡背', '🔄');
+        } else {
+          cardContainer.classList.remove('is-flipped');
+          btnFlip.innerHTML = '🔄 翻轉卡背';
+          showToast('已回到卡牌正面', '✨');
+        }
+      });
+
+      /* --------------------------------------------------------------------------
+         D. 自動懸浮巡弋模式 (Auto-Inspection Float Mode)
+         -------------------------------------------------------------------------- */
+      btnAutoInspect.addEventListener('click', () => {
+        isAutoInspecting = !isAutoInspecting;
+        if (isAutoInspecting) {
+          btnAutoInspect.style.background = 'linear-gradient(135deg, #8b5cf6, #3b82f6)';
+          btnAutoInspect.innerHTML = '⏸️ 停止巡弋';
+          showToast('已啟動 360° 自動巡弋展示模式', '🌀');
+        } else {
+          btnAutoInspect.style.background = '';
+          btnAutoInspect.innerHTML = '🌀 自動懸浮巡弋';
+          targetRotX = 0;
+          targetRotY = 0;
+          targetPointerX = 50;
+          targetPointerY = 50;
+          showToast('已恢復手動互動模式', '🕹️');
+        }
+      });
+
+      /* --------------------------------------------------------------------------
+         E. 陀螺儀動態傾斜感應 (DeviceOrientationEvent for Mobile)
+         -------------------------------------------------------------------------- */
+      btnGyro.addEventListener('click', async () => {
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+          try {
+            const permission = await DeviceOrientationEvent.requestPermission();
+            if (permission === 'granted') {
+              enableGyroscope();
+            } else {
+              showToast('未獲得陀螺儀感應權限', '⚠️');
+            }
+          } catch (err) {
+            console.error(err);
+            showToast('瀏覽器限制感測器存取', '⚠️');
+          }
+        } else if ('DeviceOrientationEvent' in window) {
+          enableGyroscope();
+        } else {
+          showToast('此裝置不支援陀螺儀感測器', '⚠️');
+        }
+      });
+
+      function enableGyroscope() {
+        if (isGyroActive) {
+          window.removeEventListener('deviceorientation', handleDeviceOrientation);
+          isGyroActive = false;
+          btnGyro.style.background = '';
+          showToast('已關閉陀螺儀連動', '📱');
+          return;
+        }
+
+        window.addEventListener('deviceorientation', handleDeviceOrientation);
+        isGyroActive = true;
+        isAutoInspecting = false;
+        btnGyro.style.background = 'linear-gradient(135deg, #06b6d4, #3b82f6)';
+        showToast('陀螺儀連動已成功啟動！請傾斜手機', '🎯');
+      }
+
+      function handleDeviceOrientation(e) {
+        if (!e.gamma && !e.beta) return;
+        isInteracting = true;
+        // gamma: 左右翻轉 (-90 ~ 90), beta: 前後俯仰 (-180 ~ 180)
+        const gamma = Math.max(-45, Math.min(45, e.gamma || 0));
+        const beta = Math.max(0, Math.min(60, (e.beta || 30) - 20)); // 以自然手持視角為中心基準
+
+        targetRotY = (gamma / 45) * maxTilt;
+        targetRotX = -((beta - 20) / 40) * maxTilt;
+
+        targetPointerX = 50 + (targetRotY / maxTilt) * 40;
+        targetPointerY = 50 - (targetRotX / maxTilt) * 40;
+      }
+
+      /* --------------------------------------------------------------------------
+         F. 全息鐳射風格切換器 (Holographic Foil Style Switcher)
+         -------------------------------------------------------------------------- */
+      const foilButtons = document.querySelectorAll('.foil-btn');
+      foilButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          foilButtons.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+
+          const style = btn.getAttribute('data-style');
+          foilLayer.className = `foil-layer foil-style-${style}`;
+
+          const names = {
+            cosmos: 'Cosmos Holo 宇宙彩虹',
+            rainbow: 'Rainbow Secret 極光全息',
+            gold: 'Gold Ultra 黑金浮雕',
+            silver: 'Silver Phantom 冷冽銀鏡'
+          };
+
+          showToast(`已套用箔膜風格：${names[style] || style}`, '✨');
+        });
+      });
+
+      /* --------------------------------------------------------------------------
+         G. 圖片立繪本機上傳 (FileReader API Preview)
+         -------------------------------------------------------------------------- */
+      fileUpload.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        if (!file.type.startsWith('image/')) {
+          showToast('請選擇正確的圖片檔案 (JPG/PNG/WebP)', '⚠️');
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          cardArtImg.src = event.target.result;
+          showToast('已成功更新專屬卡牌插畫立繪！', '🎉');
+        };
+        reader.readAsDataURL(file);
+      });
+
+      btnResetArt.addEventListener('click', () => {
+        cardArtImg.src = defaultImgSrc;
+        fileUpload.value = '';
+        showToast('已重設為原廠星神立繪', '↺');
+      });
+
+      /* --------------------------------------------------------------------------
+         H. 滑桿調節參數 (Sliders Tuning)
+         -------------------------------------------------------------------------- */
+      rangeFoil.addEventListener('input', (e) => {
+        const val = e.target.value;
+        labelFoilOpacity.textContent = `${val}%`;
+        document.documentElement.style.setProperty('--foil-opacity', (val / 100).toFixed(2));
+      });
+
+      rangeSensitivity.addEventListener('input', (e) => {
+        const val = e.target.value;
+        maxTilt = parseInt(val, 10);
+        labelSensitivity.textContent = `${val}°`;
+      });
+
+      /* --------------------------------------------------------------------------
+         I. 高解析度 PNG 一鍵匯出 (html2canvas Integration)
+         -------------------------------------------------------------------------- */
+      btnExport.addEventListener('click', async () => {
+        if (typeof html2canvas === 'undefined') {
+          showToast('匯出模組載入中，請稍候重試', '⏳');
+          return;
+        }
+
+        showToast('正在生成高解析度卡牌圖像...', '📸');
+
+        // 匯出時暫時回正並移除 3D 傾角變形，以獲得完美的平面高畫質印刷圖像
+        const prevTransform = cardContainer.style.transform;
+        const prevTransition = cardContainer.style.transition;
+        cardContainer.style.transform = isFlipped ? 'rotateY(180deg)' : 'none';
+        cardContainer.style.transition = 'none';
+
+        // 稍微等待 DOM 重繪
+        await new Promise(r => setTimeout(r, 150));
+
+        try {
+          const targetFace = isFlipped ? document.getElementById('cardBack') : cardFront;
+          const canvas = await html2canvas(targetFace, {
+            scale: 3, // 3倍超高解析度
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: null,
+            logging: false
+          });
+
+          // 復原原本的 3D 狀態
+          cardContainer.style.transform = prevTransform;
+          cardContainer.style.transition = prevTransition;
+
+          // 觸發直接下載
+          const link = document.createElement('a');
+          const cardName = document.getElementById('cardName').textContent.trim() || 'LegendaryCard';
+          link.download = `${cardName}_TCG_Holo.png`;
+          link.href = canvas.toDataURL('image/png');
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+
+          showToast('卡牌高畫質 PNG 匯出成功！', '🎉');
+        } catch (err) {
+          console.error(err);
+          cardContainer.style.transform = prevTransform;
+          cardContainer.style.transition = prevTransition;
+          showToast('匯出失敗，請確認圖片來源安全性', '⚠️');
+        }
+      });
+
+    })();
+  </script>
+</body>
+
+</html>
